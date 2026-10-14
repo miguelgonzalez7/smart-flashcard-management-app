@@ -1,0 +1,226 @@
+package org.example.csia;
+
+import javafx.event.ActionEvent;
+import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.TilePane;
+import javafx.stage.Stage;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+public class FlashcardManager {
+    @FXML private TilePane tilePane;
+    @FXML private TitledPane filterSidebar;
+    @FXML private ScrollPane scrollPane;
+    @FXML private TextField searchField;
+
+    private final FlashcardDeck flashcardDeck = FlashcardDeck.getInstance();
+
+    private boolean easy = false;
+    private boolean medium = false;
+    private boolean hard = false;
+    private List<String> selectedTopics;
+    private List<String> selectedSubjects;
+
+    public void initialize() {
+        filterSidebar.setVisible(false);
+        if (flashcardDeck.getFlashcards() != null) {
+            loadFlashcards(flashcardDeck.getFlashcards());
+        }
+        configureScrollPane();
+    }
+
+    public void loadFlashcards(List<Flashcard> flashcards) {
+        tilePane.getChildren().clear();
+        tilePane.setHgap(10);
+        tilePane.setVgap(10);
+        tilePane.setPrefColumns(3);
+
+        for (Flashcard flashcard : flashcards) {
+            if (flashcard.hasTextFront()) {
+                Label frontLabel = createTextLabel(flashcard);
+                tilePane.getChildren().add(0, frontLabel);
+            } else {
+                StackPane imageContainer = createImageContainer(flashcard);
+                tilePane.getChildren().add(0, imageContainer);
+            }
+        }
+    }
+
+    private void openFlashcardView(Flashcard flashcard) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("FlashcardView.fxml"));
+            Parent root = loader.load();
+            FlashcardView controller = loader.getController();
+            controller.initialize(flashcard);
+            Stage stage = (Stage) tilePane.getScene().getWindow();
+            stage.setScene(new Scene(root));
+            stage.show();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load flashcard view", e);
+        }
+    }
+
+    @FXML
+    public void applyFilters() {
+        List<Flashcard> filteredFlashcards = filterFlashcards();
+        loadFlashcards(filteredFlashcards);
+        filterSidebar.setVisible(false);
+    }
+
+    public List<Flashcard> filterFlashcards() {
+        String searchText = searchField.getText() != null ? searchField.getText().toLowerCase() : "";
+        return flashcardDeck.getFlashcards().stream()
+                .filter(flashcard -> matchesSearchText(flashcard, searchText)
+                        && matchesDifficulty(flashcard)
+                        && matchesTopic(flashcard, selectedTopics)
+                        && matchesSubject(flashcard, selectedSubjects))
+                .toList();
+    }
+
+    @FXML
+    public void openTopicFiltering() {
+        Dialog<List<String>> dialog = new Dialog<>();
+        dialog.setTitle("Topic Selection");
+        dialog.setHeaderText("Select the topics you want to study. \n (Hold Ctrl/Command to select multiple topics)");
+        ButtonType confirmButtonType = new ButtonType("Confirm", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(confirmButtonType, ButtonType.CANCEL);
+
+        ListView<String> dialogListView = new ListView<>();
+        dialogListView.getItems().addAll(flashcardDeck.getAllTopics());
+        dialogListView.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        dialogListView.setPrefHeight(200);
+
+        dialog.getDialogPane().setContent(dialogListView);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == confirmButtonType) {
+                selectedTopics = new ArrayList<>(dialogListView.getSelectionModel().getSelectedItems());
+            }
+            return null;
+        });
+        dialog.showAndWait();
+    }
+
+    @FXML
+    public void openSubjectFiltering() {
+        Dialog<List<String>> dialog = new Dialog<>();
+        dialog.setTitle("Subject Selection");
+        dialog.setHeaderText("Select the subjects you want to study. \n (Hold Ctrl/Command to select multiple topics)");
+        ButtonType confirmButtonType = new ButtonType("Confirm", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(confirmButtonType, ButtonType.CANCEL);
+
+        ListView<String> dialogListView = new ListView<>();
+        dialogListView.getItems().addAll(flashcardDeck.getSubjects());
+        dialogListView.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        dialogListView.setPrefHeight(200);
+
+        dialog.getDialogPane().setContent(dialogListView);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == confirmButtonType) {
+                selectedSubjects = new ArrayList<>(dialogListView.getSelectionModel().getSelectedItems());
+            }
+            return null;
+        });
+        dialog.showAndWait();
+    }
+
+    public void goBack(ActionEvent event) throws IOException {
+        Parent root = FXMLLoader.load(Objects.requireNonNull(getClass().getResource("HomeScreen.fxml")));
+        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
+        stage.setScene(new Scene(root));
+        stage.show();
+    }
+
+    private void configureScrollPane() {
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setFitToWidth(true);
+    }
+
+    private Label createTextLabel(Flashcard flashcard) {
+        Label label = new Label(flashcard.getFrontSideText());
+        label.setPrefWidth(140);
+        label.setPrefHeight(100);
+        label.setAlignment(Pos.CENTER);
+        label.setWrapText(true);
+
+        label.widthProperty().addListener((observable, oldValue, newValue) -> adjustFontSize(label));
+        label.heightProperty().addListener((observable, oldValue, newValue) -> adjustFontSize(label));
+        label.setOnMouseClicked(event -> openFlashcardView(flashcard));
+        return label;
+    }
+
+    private void adjustFontSize(Label label) {
+        double fontSize = 14;
+        double width = label.getWidth();
+        double height = label.getHeight();
+        double textLength = label.getText().length();
+
+        if (width > 0 && height > 0 && textLength > 0) {
+            double widthRatio = width / (3 * textLength);
+            fontSize = Math.min(fontSize, label.getFont().getSize() * widthRatio);
+        }
+
+        fontSize = Math.max(fontSize, 8);
+        fontSize = Math.min(fontSize, 16);
+
+        label.setStyle("-fx-font-size: " + fontSize + ";" +
+                "-fx-background-color: yellow;" +
+                "-fx-border-color: black;" +
+                "-fx-border-width: 1;" +
+                "-fx-text-alignment: center;");
+    }
+
+    private StackPane createImageContainer(Flashcard flashcard) {
+        ImageView imageView = new ImageView(flashcard.getFrontSideImage());
+        imageView.setFitWidth(140);
+        imageView.setFitHeight(100);
+        imageView.setPreserveRatio(true);
+
+        StackPane container = new StackPane(imageView);
+        container.setPrefWidth(140);
+        container.setPrefHeight(100);
+        container.setStyle("-fx-background-color: yellow; -fx-border-color: black; -fx-border-width: 1;");
+        container.setAlignment(Pos.CENTER);
+        container.setOnMouseClicked(event -> openFlashcardView(flashcard));
+        return container;
+    }
+
+    private boolean matchesSearchText(Flashcard flashcard, String searchText) {
+        if (searchText.isEmpty()) return true;
+        String front = flashcard.hasTextFront() ? flashcard.getFrontSideText().toLowerCase() : "";
+        String back = flashcard.hasTextBack() ? flashcard.getBackSideText().toLowerCase() : "";
+        return front.contains(searchText) || back.contains(searchText);
+    }
+
+    private boolean matchesDifficulty(Flashcard flashcard) {
+        return (easy && flashcard.getDifficulty() == 1)
+                || (medium && flashcard.getDifficulty() == 2)
+                || (hard && flashcard.getDifficulty() == 3)
+                || (!easy && !medium && !hard);
+    }
+
+    private boolean matchesTopic(Flashcard flashcard, List<String> selectedTopics) {
+        return selectedTopics == null || selectedTopics.isEmpty() || selectedTopics.contains(flashcard.getTopic());
+    }
+
+    private boolean matchesSubject(Flashcard flashcard, List<String> selectedSubjects) {
+        return selectedSubjects == null || selectedSubjects.isEmpty() || selectedSubjects.contains(flashcard.getSubject());
+    }
+
+    @FXML public void toggleSidebar() { filterSidebar.setVisible(!filterSidebar.isVisible()); }
+    @FXML public void selectDifficultyEasy() { easy = !easy; }
+    @FXML public void selectDifficultyMedium() { medium = !medium; }
+    @FXML public void selectDifficultyHard() { hard = !hard; }
+}
